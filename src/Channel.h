@@ -62,12 +62,5 @@ private:
     int revents_;       // epoll_wait 返回的就绪事件
     int index_;         // 在 Epoller 中的状态(-1:未添加, 1:已添加, 2:已删除)
 
-    // 用 weak_ptr 防止 handleEvent 执行期间对象被销毁
-    std::weak_ptr<void>   tie_;
-    bool                  tied_;
 
-    EventCallback readCallback_;
-    EventCallback writeCallback_;
-    EventCallback closeCallback_;
-    EventCallback errorCallback_;
 };
