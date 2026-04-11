@@ -8,7 +8,6 @@ ssize_t Buffer::readFd(int fd, int* savedErrno) {
     char   extrabuf[65536];      // 栈上额外缓冲区，不占堆内存
     struct iovec vec[2];
 
-    const size_t writable = writableBytes();
 
     // vec[0]: buffer 自身的可写区域
     vec[0].iov_base = beginWrite();

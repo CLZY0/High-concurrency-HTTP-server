@@ -27,14 +27,6 @@ public:
     // 返回可读数据起始指针（只读）
     const char* peek() const { return begin() + readIdx_; }
 
-    // 在可读区域搜索 \r\n（HTTP 行结束符）
-    const char* findCRLF() const {
-        const char* start = peek();
-        const char* end   = beginWrite();
-        const char* crlf  = std::search(start, end, "\r\n", "\r\n" + 2);
-        return (crlf == end) ? nullptr : crlf;
-    }
-
     // 在可读区搜索单个字符
     const char* findChar(char c) const {
         const char* p = std::find(peek(), beginWrite(), c);
