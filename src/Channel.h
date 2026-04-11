@@ -42,11 +42,7 @@ public:
     // 事件分发：根据 revents_ 调用对应回调
     void handleEvent();
 
-    // 防止 handleEvent 期间 Channel 被析构（配合 shared_ptr）
-    void tie(const std::shared_ptr<void>& obj);
 
-    EventLoop* ownerLoop() { return loop_; }
-    void remove();   // 从 EventLoop 中移除自己
 
 
 
