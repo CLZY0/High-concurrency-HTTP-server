@@ -48,13 +48,6 @@ public:
     EventLoop* ownerLoop() { return loop_; }
     void remove();   // 从 EventLoop 中移除自己
 
-private:
-    void handleEventWithGuard();
-    void update();   // 通知 EventLoop 更新 epoll 中的注册
-
-    static const int kNoneEvent  = 0;
-    static const int kReadEvent  = EPOLLIN | EPOLLPRI;   // 读事件
-    static const int kWriteEvent = EPOLLOUT;             // 写事件
 
 
 
