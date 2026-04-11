@@ -42,9 +42,32 @@ public:
     // 事件分发：根据 revents_ 调用对应回调
     void handleEvent();
 
+    // 防止 handleEvent 期间 Channel 被析构（配合 shared_ptr）
+    void tie(const std::shared_ptr<void>& obj);
 
+    EventLoop* ownerLoop() { return loop_; }
+    void remove();   // 从 EventLoop 中移除自己
 
+private:
+    void handleEventWithGuard();
+    void update();   // 通知 EventLoop 更新 epoll 中的注册
 
+    static const int kNoneEvent  = 0;
+    static const int kReadEvent  = EPOLLIN | EPOLLPRI;   // 读事件
+    static const int kWriteEvent = EPOLLOUT;             // 写事件
 
+    EventLoop* loop_;   // 所属 EventLoop
+    int fd_;            // 对应的文件描述符
+    int events_;        // 当前关注的事件（即 epoll_ctl 注册的事件）
+    int revents_;       // epoll_wait 返回的就绪事件
+    int index_;         // 在 Epoller 中的状态(-1:未添加, 1:已添加, 2:已删除)
 
+    // 用 weak_ptr 防止 handleEvent 执行期间对象被销毁
+    std::weak_ptr<void>   tie_;
+    bool                  tied_;
+
+    EventCallback readCallback_;
+    EventCallback writeCallback_;
+    EventCallback closeCallback_;
+    EventCallback errorCallback_;
 };
