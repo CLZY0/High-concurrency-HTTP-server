@@ -56,11 +56,6 @@ private:
     static const int kReadEvent  = EPOLLIN | EPOLLPRI;   // 读事件
     static const int kWriteEvent = EPOLLOUT;             // 写事件
 
-    EventLoop* loop_;   // 所属 EventLoop
-    int fd_;            // 对应的文件描述符
-    int events_;        // 当前关注的事件（即 epoll_ctl 注册的事件）
-    int revents_;       // epoll_wait 返回的就绪事件
-    int index_;         // 在 Epoller 中的状态(-1:未添加, 1:已添加, 2:已删除)
 
 
 };
