@@ -44,9 +44,6 @@ void Channel::handleEventWithGuard() {
         return;
     }
 
-    // 可读事件（含 EPOLLPRI 带外数据）
-    if (revents_ & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)) {
-        if (readCallback_) readCallback_();
-    }
+
 
     
