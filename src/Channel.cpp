@@ -49,9 +49,4 @@ void Channel::handleEventWithGuard() {
         if (readCallback_) readCallback_();
     }
 
-    // 可写事件
-    if (revents_ & EPOLLOUT) {
-        if (writeCallback_) writeCallback_();
-    }
-}
-
+    
