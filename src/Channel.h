@@ -25,6 +25,17 @@ public:
     bool isReading()    const { return events_ & kReadEvent; }
     bool isWriting()    const { return events_ & kWriteEvent; }
 
+    // ===== 修改关注的事件（会通知 EventLoop 更新 epoll）=====
+    void enableReading()  { events_ |=  kReadEvent;  update(); }
+    void disableReading() { events_ &= ~kReadEvent;  update(); }
+    void enableWriting()  { events_ |=  kWriteEvent; update(); }
+    void disableWriting() { events_ &= ~kWriteEvent; update(); }
+    void disableAll()     { events_  =  kNoneEvent;  update(); }
+
+    // epoll 返回的就绪事件
+    void setRevents(int revt) { revents_ = revt; }
+
+    // EventLoop 使用：判断是否在 epoll 中注册过
     int  index() const        { return index_; }
     void setIndex(int idx)    { index_ = idx; }
 
