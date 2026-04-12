@@ -38,11 +38,6 @@ void Channel::handleEventWithGuard() {
         return;
     }
 
-    // 错误事件
-    if (revents_ & EPOLLERR) {
-        if (errorCallback_) errorCallback_();
-        return;
-    }
 
 
 
