@@ -30,13 +30,7 @@ void Channel::handleEvent() {
     }
 }
 
-// 根据 revents_ 实际分发到对应回调
-void Channel::handleEventWithGuard() {
-    // 对端关闭连接（FIN）
-    if ((revents_ & EPOLLHUP) && !(revents_ & EPOLLIN)) {
-        if (closeCallback_) closeCallback_();
-        return;
-    }
+
 
 
 
