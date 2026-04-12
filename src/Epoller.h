@@ -28,9 +28,5 @@ public:
 private:
     void epollCtl(int op, Channel* channel);
 
-    static const int kInitEventListSize = 16;  // events 数组初始大小
-    // Channel index 的含义
-
-
 
 };
