@@ -32,11 +32,7 @@ private:
     // Channel index 的含义
     static const int kNew     = -1;  // 还未加入 epoll
     static const int kAdded   =  1;  // 已在 epoll 中
-    static const int kDeleted =  2;  // 曾加入过，现已删除
 
-    int epollFd_;   // epoll 实例 fd
-
- 
 
 
 
