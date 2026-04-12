@@ -40,5 +40,5 @@ private:
     std::unordered_map<int, Channel*> channels_;
 
     // epoll_wait 返回的就绪事件数组
-    std::vector<struct epoll_event> events_;
+
 };
