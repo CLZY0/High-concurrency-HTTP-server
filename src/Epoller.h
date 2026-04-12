@@ -39,6 +39,6 @@ private:
     // fd → Channel* 的映射，方便 poll() 后根据 fd 找到 Channel
     std::unordered_map<int, Channel*> channels_;
 
-    // epoll_wait 返回的就绪事件数组
+
 
 };
