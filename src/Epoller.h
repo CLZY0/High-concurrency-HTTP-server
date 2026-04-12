@@ -20,13 +20,5 @@ public:
     // 添加或修改 Channel（对应 epoll_ctl EPOLL_CTL_ADD/MOD）
     void updateChannel(Channel* channel);
 
-    // 删除 Channel（对应 epoll_ctl EPOLL_CTL_DEL）
-    void removeChannel(Channel* channel);
-
-    bool hasChannel(Channel* channel) const;
-
-private:
-    void epollCtl(int op, Channel* channel);
-
-
+ 
 };
