@@ -18,17 +18,6 @@ void Channel::tie(const std::shared_ptr<void>& obj) {
     tied_ = true;
 }
 
-// 事件分发入口
-void Channel::handleEvent() {
-    if (tied_) {
-        // 锁住 weak_ptr，确保事件处理期间对象不被销毁
-        std::shared_ptr<void> guard = tie_.lock();
-        if (guard) handleEventWithGuard();
-        // guard 析构时 shared_ptr 引用计数归0，对象才能销毁
-    } else {
-        handleEventWithGuard();
-    }
-}
 
 
 
