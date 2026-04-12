@@ -36,7 +36,7 @@ private:
 
     int epollFd_;   // epoll 实例 fd
 
-    // fd → Channel* 的映射，方便 poll() 后根据 fd 找到 Channel
+ 
 
 
 
