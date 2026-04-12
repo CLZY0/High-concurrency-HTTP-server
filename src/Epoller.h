@@ -30,9 +30,6 @@ private:
 
     static const int kInitEventListSize = 16;  // events 数组初始大小
     // Channel index 的含义
-    static const int kNew     = -1;  // 还未加入 epoll
-    static const int kAdded   =  1;  // 已在 epoll 中
-
 
 
 
