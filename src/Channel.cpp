@@ -55,11 +55,3 @@ void Channel::handleEventWithGuard() {
     }
 }
 
-// 通知 EventLoop 更新 epoll 注册
-void Channel::update() {
-    loop_->updateChannel(this);
-}
-
-void Channel::remove() {
-    loop_->removeChannel(this);
-}
