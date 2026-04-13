@@ -90,11 +90,5 @@ bool Epoller::hasChannel(Channel* channel) const {
 }
 
 // 实际调用 epoll_ctl
-void Epoller::epollCtl(int op, Channel* channel) {
-    struct epoll_event event;
-    memset(&event, 0, sizeof(event));
-    event.events   = channel->events();
-    event.data.ptr = channel;   // 存 Channel 指针，poll() 时直接取出
-
 
 }
