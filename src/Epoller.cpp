@@ -77,10 +77,5 @@ void Epoller::removeChannel(Channel* channel) {
     int fd    = channel->fd();
     int index = channel->index();
 
-    channels_.erase(fd);
-    if (index == kAdded) {
-        epollCtl(EPOLL_CTL_DEL, channel);
-    }
-    channel->setIndex(kNew);
-}
+
 
