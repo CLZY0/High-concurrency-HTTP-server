@@ -96,7 +96,5 @@ void Epoller::epollCtl(int op, Channel* channel) {
     event.events   = channel->events();
     event.data.ptr = channel;   // 存 Channel 指针，poll() 时直接取出
 
-    if (epoll_ctl(epollFd_, op, channel->fd(), &event) < 0) {
-        // 实际项目中应记录日志
-    }
+
 }
