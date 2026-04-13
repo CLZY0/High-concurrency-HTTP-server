@@ -73,9 +73,4 @@ void Epoller::updateChannel(Channel* channel) {
     }
 }
 
-void Epoller::removeChannel(Channel* channel) {
-    int fd    = channel->fd();
-    int index = channel->index();
-
-
 
