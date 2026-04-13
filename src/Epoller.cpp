@@ -84,11 +84,3 @@ void Epoller::removeChannel(Channel* channel) {
     channel->setIndex(kNew);
 }
 
-bool Epoller::hasChannel(Channel* channel) const {
-    auto it = channels_.find(channel->fd());
-    return it != channels_.end() && it->second == channel;
-}
-
-// 实际调用 epoll_ctl
-
-}
