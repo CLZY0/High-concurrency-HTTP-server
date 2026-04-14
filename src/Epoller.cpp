@@ -62,9 +62,5 @@ void Epoller::updateChannel(Channel* channel) {
     } else {
         // 已注册的 Channel
         assert(index == kAdded);
-        if (channel->isNoneEvent()) {
-            // 不再关注任何事件，从 epoll 中删除（但保留 channels_ 映射）
-            epollCtl(EPOLL_CTL_DEL, channel);
-            channel->setIndex(kDeleted);
   
 
