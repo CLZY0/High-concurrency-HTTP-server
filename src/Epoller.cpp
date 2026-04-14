@@ -59,8 +59,4 @@ void Epoller::updateChannel(Channel* channel) {
         channels_[fd] = channel;
         channel->setIndex(kAdded);
         epollCtl(EPOLL_CTL_ADD, channel);
-    } else {
-        // 已注册的 Channel
-        assert(index == kAdded);
-  
 
