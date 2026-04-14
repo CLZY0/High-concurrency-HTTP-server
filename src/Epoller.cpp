@@ -46,11 +46,3 @@ void Epoller::poll(int timeoutMs, ChannelList& activeChannels) {
     // 如果就绪事件数 == 数组大小，可能还有更多事件，扩容
     if (numEvents == static_cast<int>(events_.size())) {
         events_.resize(events_.size() * 2);
-    }
-}
-
-// 添加或修改 Channel 的 epoll 注册
-void Epoller::updateChannel(Channel* channel) {
-    int index = channel->index();
-
-
