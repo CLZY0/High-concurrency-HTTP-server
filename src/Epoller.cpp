@@ -53,10 +53,4 @@ void Epoller::poll(int timeoutMs, ChannelList& activeChannels) {
 void Epoller::updateChannel(Channel* channel) {
     int index = channel->index();
 
-    if (index == kNew || index == kDeleted) {
-        // 新 Channel，用 EPOLL_CTL_ADD 添加
-        int fd = channel->fd();
-        channels_[fd] = channel;
-        channel->setIndex(kAdded);
-        epollCtl(EPOLL_CTL_ADD, channel);
 
