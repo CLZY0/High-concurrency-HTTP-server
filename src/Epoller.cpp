@@ -66,11 +66,5 @@ void Epoller::updateChannel(Channel* channel) {
             // 不再关注任何事件，从 epoll 中删除（但保留 channels_ 映射）
             epollCtl(EPOLL_CTL_DEL, channel);
             channel->setIndex(kDeleted);
-        } else {
-            // 更新关注的事件
-            epollCtl(EPOLL_CTL_MOD, channel);
-        }
-    }
-}
-
+  
 
