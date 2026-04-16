@@ -41,12 +41,3 @@ public:
     // 唤醒阻塞在 epoll_wait 的 EventLoop
     void wakeup();
 
-private:
-    void handleRead();      // 处理 wakeupFd_ 上的读事件
-    void doPendingFunctors(); // 执行队列中积累的任务
-
-    static const int kPollTimeMs = 10000;  // epoll_wait 超时 10 秒
-
-    std::atomic<bool> looping_;   // 是否正在循环
-
- 
