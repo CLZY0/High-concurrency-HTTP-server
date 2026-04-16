@@ -59,10 +59,5 @@ private:
     // 当其他线程调用 wakeup()，就往 wakeupFd_ 写 8 字节
     // epoll_wait 立即返回（因为 wakeupFd_ 可读）
     int wakeupFd_;
-    std::unique_ptr<Channel> wakeupChannel_;
-
-    // 就绪的 Channel 列表
-    std::vector<Channel*> activeChannels_;
-
-
+ 
 };
