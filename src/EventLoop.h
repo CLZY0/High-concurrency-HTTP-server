@@ -48,11 +48,5 @@ private:
     static const int kPollTimeMs = 10000;  // epoll_wait 超时 10 秒
 
     std::atomic<bool> looping_;   // 是否正在循环
-    std::atomic<bool> quit_;      // 是否请求退出
-    bool callingPendingFunctors_;  // 是否正在执行 pendingFunctors_
-
-    pid_t threadId_;   // 创建 EventLoop 的线程 ID
-
-    std::unique_ptr<Epoller>  epoller_;
 
  
