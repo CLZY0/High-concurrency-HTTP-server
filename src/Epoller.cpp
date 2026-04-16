@@ -42,7 +42,3 @@ void Epoller::poll(int timeoutMs, ChannelList& activeChannels) {
         ch->setRevents(events_[i].events);  // 告诉 Channel 发生了什么事件
         activeChannels.push_back(ch);       // 加入就绪列表
     }
-
-    // 如果就绪事件数 == 数组大小，可能还有更多事件，扩容
-    if (numEvents == static_cast<int>(events_.size())) {
-        events_.resize(events_.size() * 2);
