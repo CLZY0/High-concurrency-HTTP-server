@@ -34,5 +34,11 @@ private:
     static const int kAdded   =  1;  // 已在 epoll 中
     static const int kDeleted =  2;  // 曾加入过，现已删除
 
-   
+    int epollFd_;   // epoll 实例 fd
+
+    // fd → Channel* 的映射，方便 poll() 后根据 fd 找到 Channel
+    std::unordered_map<int, Channel*> channels_;
+
+    // epoll_wait 返回的就绪事件数组
+    std::vector<struct epoll_event> events_;
 };

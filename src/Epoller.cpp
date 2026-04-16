@@ -42,3 +42,61 @@ void Epoller::poll(int timeoutMs, ChannelList& activeChannels) {
         ch->setRevents(events_[i].events);  // 告诉 Channel 发生了什么事件
         activeChannels.push_back(ch);       // 加入就绪列表
     }
+
+    // 如果就绪事件数 == 数组大小，可能还有更多事件，扩容
+    if (numEvents == static_cast<int>(events_.size())) {
+        events_.resize(events_.size() * 2);
+    }
+}
+
+// 添加或修改 Channel 的 epoll 注册
+void Epoller::updateChannel(Channel* channel) {
+    int index = channel->index();
+
+    if (index == kNew || index == kDeleted) {
+        // 新 Channel，用 EPOLL_CTL_ADD 添加
+        int fd = channel->fd();
+        channels_[fd] = channel;
+        channel->setIndex(kAdded);
+        epollCtl(EPOLL_CTL_ADD, channel);
+    } else {
+        // 已注册的 Channel
+        assert(index == kAdded);
+        if (channel->isNoneEvent()) {
+            // 不再关注任何事件，从 epoll 中删除（但保留 channels_ 映射）
+            epollCtl(EPOLL_CTL_DEL, channel);
+            channel->setIndex(kDeleted);
+        } else {
+            // 更新关注的事件
+            epollCtl(EPOLL_CTL_MOD, channel);
+        }
+    }
+}
+
+void Epoller::removeChannel(Channel* channel) {
+    int fd    = channel->fd();
+    int index = channel->index();
+
+    channels_.erase(fd);
+    if (index == kAdded) {
+        epollCtl(EPOLL_CTL_DEL, channel);
+    }
+    channel->setIndex(kNew);
+}
+
+bool Epoller::hasChannel(Channel* channel) const {
+    auto it = channels_.find(channel->fd());
+    return it != channels_.end() && it->second == channel;
+}
+
+// 实际调用 epoll_ctl
+void Epoller::epollCtl(int op, Channel* channel) {
+    struct epoll_event event;
+    memset(&event, 0, sizeof(event));
+    event.events   = channel->events();
+    event.data.ptr = channel;   // 存 Channel 指针，poll() 时直接取出
+
+    if (epoll_ctl(epollFd_, op, channel->fd(), &event) < 0) {
+        // 实际项目中应记录日志
+    }
+}
