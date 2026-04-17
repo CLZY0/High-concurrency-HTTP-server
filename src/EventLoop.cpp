@@ -35,6 +35,12 @@ EventLoop::~EventLoop() {
     ::close(wakeupFd_);
 }
 
+// 事件循环主体：不断 poll → 处理事件 → 执行任务
+void EventLoop::loop() {
+    assert(!looping_);
+    looping_ = true;
+    quit_    = false;
+
     while (!quit_) {
         activeChannels_.clear();
 
