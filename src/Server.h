@@ -3,7 +3,12 @@
 #include "EventLoop.h"
 #include "Acceptor.h"
 #include "ThreadPool.h"
-#includ
+#include "Timer.h"
+#include <unordered_map>
+#include <memory>
+#include <string>
+
+class HttpConn;
 
 class Server {
 public:

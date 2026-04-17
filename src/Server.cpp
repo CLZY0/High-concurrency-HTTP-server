@@ -4,7 +4,12 @@
 #include <functional>
 #include <iostream>
 
-Ser
+Server::Server(int port, int threadNum, const std::string& resourceDir)
+    : port_(port)
+    , resourceDir_(resourceDir)
+    , acceptor_(&loop_, port)
+    , threadPool_(threadNum)
+{
     // 设置新连接回调
     acceptor_.setNewConnectionCallback(
         [this](int fd){ onNewConnection(fd); });
