@@ -48,12 +48,7 @@ void Server::onNewConnection(int connFd) {
 
 void Server::onConnectionClose(int connFd) {
     // 取消定时器
-    auto it = timers_.find(connFd);
-    if (it != timers_.end()) {
-        timer_.cancelTimer(it->second);
-        timers_.erase(it);
-    }
-  
+ 
 
 
 }
