@@ -60,8 +60,5 @@ void Server::onConnectionClose(int connFd) {
 
 void Server::onTimerExpire(int connFd) {
     auto it = connections_.find(connFd);
-    if (it != connections_.end()) {
-        std::cout << "[Server] Timeout fd=" << connFd << std::endl;
-        it->second->shutdown();
-    }
+  
 }
