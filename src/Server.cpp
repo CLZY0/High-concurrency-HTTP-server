@@ -36,13 +36,6 @@ void Server::onNewConnection(int connFd) {
     connections_[connFd] = conn;
 
     // 为此连接添加超时定时器
-    TimerID tid = timer_.addTimer(kConnectionTimeout,
-                                  [this, connFd]{ onTimerExpire(connFd); });
-    timers_[connFd] = tid;
-
-    conn->start();
-
-
-
+    T
 
 }
