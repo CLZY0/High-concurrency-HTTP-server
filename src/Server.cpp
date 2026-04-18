@@ -42,13 +42,7 @@ void Server::onNewConnection(int connFd) {
 
     conn->start();
 
-    std::cout << "[Server] New conn fd=" << connFd
-              << " total=" << HttpConn::userCount << std::endl;
-}
 
-void Server::onConnectionClose(int connFd) {
-    // 取消定时器
- 
 
 
 }
