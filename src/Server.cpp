@@ -53,10 +53,7 @@ void Server::onConnectionClose(int connFd) {
         timer_.cancelTimer(it->second);
         timers_.erase(it);
     }
-    connections_.erase(connFd);
-    std::cout << "[Server] Close fd=" << connFd
-              << " total=" << HttpConn::userCount << std::endl;
-}
+  
 
 
 }
