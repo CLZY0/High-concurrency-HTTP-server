@@ -58,7 +58,5 @@ void Server::onConnectionClose(int connFd) {
               << " total=" << HttpConn::userCount << std::endl;
 }
 
-void Server::onTimerExpire(int connFd) {
-    auto it = connections_.find(connFd);
-  
+
 }
