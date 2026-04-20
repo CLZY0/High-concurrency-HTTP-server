@@ -36,6 +36,32 @@ void Server::onNewConnection(int connFd) {
     connections_[connFd] = conn;
 
     // 为此连接添加超时定时器
-    T
+    TimerID tid = timer_.addTimer(kConnectionTimeout,
+                                  [this, connFd]{ onTimerExpire(connFd); });
+    timers_[connFd] = tid;
 
+    conn->start();
+
+    std::cout << "[Server] New conn fd=" << connFd
+              << " total=" << HttpConn::userCount << std::endl;
+}
+
+void Server::onConnectionClose(int connFd) {
+    // 取消定时器
+    auto it = timers_.find(connFd);
+    if (it != timers_.end()) {
+        timer_.cancelTimer(it->second);
+        timers_.erase(it);
+    }
+    connections_.erase(connFd);
+    std::cout << "[Server] Close fd=" << connFd
+              << " total=" << HttpConn::userCount << std::endl;
+}
+
+void Server::onTimerExpire(int connFd) {
+    auto it = connections_.find(connFd);
+    if (it != connections_.end()) {
+        std::cout << "[Server] Timeout fd=" << connFd << std::endl;
+        it->second->shutdown();
+    }
 }
