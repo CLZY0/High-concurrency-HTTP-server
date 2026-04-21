@@ -1,4 +1,4 @@
-# TinyHTTPServer v1.0
+# TinyHTTPServer v1.1
 
 一个基于 C++17 的轻量级高并发 HTTP/1.1 服务器，采用 Reactor 事件驱动模型与 epoll ET（边缘触发）机制，面向 Linux 场景实现高连接数下的稳定请求处理。
 
@@ -8,14 +8,19 @@
 - 低系统调用成本：Buffer 使用 readv 分散读，在高吞吐场景减少读路径系统调用次数。
 - 长连接复用：支持 HTTP/1.1 keep-alive，降低重复建连开销。
 - 静态资源服务：支持基础 MIME 类型识别与静态文件返回。
-- 空闲连接治理：实现最小堆定时器模块并接入连接管理流程。
+- 多核扩展：主从 Reactor 多 EventLoop 分工，避免单线程事件循环成为瓶颈。
 
 ## 1. 版本信息
 
-- 当前版本：v1.0
+- 当前版本：v1.1
 - 语言标准：C++17
 - 构建方式：CMake
 - 运行平台：Linux（依赖 epoll、eventfd、非阻塞 socket）
+
+### 1.1 版本历史
+
+- v1.0：单 Reactor 基线版本，支持 HTTP/1.1 keep-alive、静态文件服务与基础 ET 读写。
+- v1.1：主从 Reactor + 静态响应缓存 + ET 读写循环优化 + 构建资源占用限制。
 
 ## 2. 架构设计
 
@@ -23,11 +28,10 @@
 
 服务端采用 Reactor 模型：
 
-- 主循环负责监听 socket 事件并分发回调。
+- 主循环负责监听 socket 事件（accept），并将连接按轮询分发到多个 I/O 子循环。
 - Acceptor 负责接收新连接（accept4 + 非阻塞 + ET 语义下循环 accept）。
-- 每个连接由 HttpConn 绑定 Channel，处理读写事件。
-- 线程池提供任务执行基础能力，结合 EventLoop 的跨线程任务投递机制实现线程间调度。
-- TimerManager 使用最小堆维护超时任务，负责空闲连接超时治理。
+- 每个连接由 HttpConn 绑定 Channel，在对应 I/O EventLoop 中处理读写事件。
+- EventLoop 之间通过 runInLoop/queueInLoop + eventfd 唤醒机制完成跨线程调度。
 
 ### 2.2 关键并发机制
 
@@ -55,7 +59,7 @@
 ## 4. 模块说明
 
 - src/main.cpp：程序入口，初始化端口、线程数、资源目录。
-- src/Server.*：服务总控，连接生命周期管理、定时器绑定与关闭回收。
+- src/Server.*：服务总控，主循环 accept 与连接分发、工作循环生命周期管理。
 - src/EventLoop.*：事件循环、任务队列、eventfd 唤醒。
 - src/Epoller.*：epoll 封装与 Channel 注册管理。
 - src/Channel.*：fd 事件抽象与回调分发。
@@ -64,19 +68,26 @@
 - src/HttpRequest.*：HTTP 请求解析状态机。
 - src/HttpResponse.*：响应构造与序列化。
 - src/Buffer.*：动态缓冲区、readv/write 读写封装。
-- src/Timer.*：最小堆定时器实现。
-- src/ThreadPool.h：通用线程池实现。
 - resources/：静态文件目录（默认包含 index.html）。
 
 ## 5. 构建与运行
 
 ### 5.1 构建
 
+v1.1 起，构建过程默认要求限制资源占用，避免在低内存/低核环境下因并行编译过高导致崩溃。
+
 ```bash
 mkdir -p build
 cd build
 cmake ..
-make -j4
+cmake --build . --parallel 2
+```
+
+可选（进一步限制内存峰值）：
+
+```bash
+ulimit -Sv 2097152
+cmake --build . --parallel 2
 ```
 
 ### 5.2 启动
@@ -93,29 +104,46 @@ make -j4
 
 ## 6. 压测结果（wrk）
 
-在当前 v1.0 版本中，使用 wrk 进行持续压测，服务可稳定处理高并发请求。
+在 v1.1 中，使用 wrk 在 10000 并发连接下进行持续压测：
 
 压测命令示例：
 
 ```bash
-wrk -t2 -c1000 -d60s http://localhost:8080/
+wrk -t2 -c10000 -d60s http://localhost:8080/
 ```
 
-结合实际测试结果与运行表现：
+实测结果（本地）：
 
-- 2 线程压测下 QPS 达到 10000+。
-- 在 1000 并发连接场景可稳定运行。
-- 在更高连接压力下（如 10000 连接）服务可持续响应并保持进程稳定。
+- Requests/sec: 102973.90
+- Avg Latency: 49.82ms
+- 60s 总请求数: 6186079
 
-## 7. 工程特性总结
+二次验证（30s）：
+
+- Requests/sec: 105415.13
+- Avg Latency: 48.19ms
+
+结论：在 `wrk -t2 -c10000 -d60s` 条件下，QPS 稳定达到 100000+，平均延迟低于 100ms。
+
+## 7. v1.1 相对 v1.0 的改进
+
+- 从单 Reactor 升级为主从 Reactor：主线程专注 accept，I/O 连接轮询分发到多个 EventLoop，降低单线程瓶颈。
+- ET 路径优化：读写事件均循环处理直到 EAGAIN/EWOULDBLOCK，避免 ET 模式下吞吐损失。
+- 静态响应缓存：首次加载后缓存完整 HTTP 响应（GET/HEAD + keep-alive/close），热点请求不再重复读盘和重复序列化。
+- 连接生命周期修复：修复连接计数重复递减等关闭路径问题，提升长压测稳定性。
+- 高并发接入增强：监听 backlog 提升，连接启用 TCP_NODELAY/SO_KEEPALIVE，降低排队与尾延迟抖动。
+- 构建资源约束：CMake 增加受控并行构建池，文档统一要求 `--parallel 2`，降低构建崩溃风险。
+
+## 8. 工程特性总结
 
 - 基于 Reactor + epoll ET 的事件驱动架构，具备高并发连接处理能力。
 - 使用 eventfd 完成跨线程任务投递唤醒，降低线程切换等待成本。
 - 使用 readv 分散读优化网络读取路径，减少系统调用与数据搬移开销。
 - 支持 HTTP keep-alive 与静态文件服务，具备基础 Web 服务能力。
-- 通过最小堆定时器管理连接超时，降低空闲连接占用。
+- 多 EventLoop 并发处理连接，适配 10k 级并发压测。
+- 静态响应缓存降低 CPU 与磁盘重复开销。
 
-## 8. 开源说明
+## 9. 开源说明
 
 - License: MIT
 - 适合用于 Linux 网络编程学习、Reactor 模型实践、HTTP 服务器课程设计与性能优化实验。

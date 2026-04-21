@@ -3,65 +3,102 @@
 #include "HttpConn.h"
 #include <functional>
 #include <iostream>
+#include <unistd.h>
 
-Server::Server(int port, int threadNum, const std::string& resourceDir)
-    : port_(port)
-    , resourceDir_(resourceDir)
-    , acceptor_(&loop_, port)
-    , threadPool_(threadNum)
+Server::Server(int port, int threadNum, const std::string &resourceDir)
+    : port_(port), ioThreadNum_(threadNum > 0 ? threadNum : 1), resourceDir_(resourceDir), acceptor_(&loop_, port), nextWorker_(0), initializedWorkers_(0)
 {
     // 设置新连接回调
     acceptor_.setNewConnectionCallback(
-        [this](int fd){ onNewConnection(fd); });
+        [this](int fd)
+        { onNewConnection(fd); });
 
     std::cout << "[Server] Port=" << port
-              << " Threads=" << threadNum
+              << " IOThreads=" << ioThreadNum_
               << " Resources=" << resourceDir << std::endl;
 }
 
-Server::~Server() {}
+Server::~Server()
+{
+    loop_.quit();
+    for (auto &worker : workers_)
+    {
+        if (worker && worker->loop)
+            worker->loop->quit();
+    }
+    for (auto &t : ioThreads_)
+    {
+        if (t.joinable())
+            t.join();
+    }
+}
 
-void Server::start() {
+void Server::start()
+{
+    startWorkerLoops();
     acceptor_.listen();
     std::cout << "[Server] Listening on port " << port_ << std::endl;
-    loop_.loop();   // 启动事件循环（阻塞在这里）
+    loop_.loop(); // 启动事件循环（阻塞在这里）
 }
 
-void Server::onNewConnection(int connFd) {
-    // 创建 HttpConn（在主线程 EventLoop 中）
-    auto conn = std::make_shared<HttpConn>(&loop_, connFd, resourceDir_);
+void Server::startWorkerLoops()
+{
+    workers_.reserve(static_cast<size_t>(ioThreadNum_));
+    for (int i = 0; i < ioThreadNum_; ++i)
+    {
+        workers_.emplace_back(new WorkerContext());
+        WorkerContext *ctx = workers_.back().get();
 
-    conn->setCloseCallback([this](int fd){ onConnectionClose(fd); });
-
-    connections_[connFd] = conn;
-
-    // 为此连接添加超时定时器
-    TimerID tid = timer_.addTimer(kConnectionTimeout,
-                                  [this, connFd]{ onTimerExpire(connFd); });
-    timers_[connFd] = tid;
-
-    conn->start();
-
-    std::cout << "[Server] New conn fd=" << connFd
-              << " total=" << HttpConn::userCount << std::endl;
-}
-
-void Server::onConnectionClose(int connFd) {
-    // 取消定时器
-    auto it = timers_.find(connFd);
-    if (it != timers_.end()) {
-        timer_.cancelTimer(it->second);
-        timers_.erase(it);
+        ioThreads_.emplace_back([this, ctx]()
+                                {
+            EventLoop loop;
+            {
+                std::lock_guard<std::mutex> lock(workerInitMutex_);
+                ctx->loop = &loop;
+                ++initializedWorkers_;
+            }
+            workerInitCv_.notify_one();
+            loop.loop();
+            ctx->loop = nullptr; });
     }
-    connections_.erase(connFd);
-    std::cout << "[Server] Close fd=" << connFd
-              << " total=" << HttpConn::userCount << std::endl;
+
+    std::unique_lock<std::mutex> lock(workerInitMutex_);
+    workerInitCv_.wait(lock, [this]
+                       { return initializedWorkers_ == ioThreadNum_; });
 }
 
-void Server::onTimerExpire(int connFd) {
-    auto it = connections_.find(connFd);
-    if (it != connections_.end()) {
-        std::cout << "[Server] Timeout fd=" << connFd << std::endl;
-        it->second->shutdown();
+Server::WorkerContext *Server::pickWorker()
+{
+    if (workers_.empty())
+        return nullptr;
+    WorkerContext *worker = workers_[nextWorker_].get();
+    nextWorker_ = (nextWorker_ + 1) % workers_.size();
+    return worker;
+}
+
+void Server::onNewConnection(int connFd)
+{
+    WorkerContext *worker = pickWorker();
+    if (!worker || !worker->loop)
+    {
+        ::close(connFd);
+        return;
     }
+
+    EventLoop *ioLoop = worker->loop;
+    ioLoop->runInLoop([this, worker, ioLoop, connFd]()
+                      {
+        auto conn = std::make_shared<HttpConn>(ioLoop, connFd, resourceDir_);
+        conn->setCloseCallback([this, worker](int fd) {
+            onConnectionClose(worker, fd);
+        });
+        worker->connections[connFd] = conn;
+        conn->start(); });
+}
+
+void Server::onConnectionClose(WorkerContext *worker, int connFd)
+{
+    if (!worker)
+        return;
+    worker->connections.erase(connFd);
 }
