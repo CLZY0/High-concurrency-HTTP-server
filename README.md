@@ -19,8 +19,29 @@
 
 ### 1.1 版本历史
 
-- v1.0：单 Reactor 基线版本，支持 HTTP/1.1 keep-alive、静态文件服务与基础 ET 读写。
-- v1.1：主从 Reactor + 静态响应缓存 + ET 读写循环优化 + 构建资源占用限制。
+#### v1.0（基线版本）
+
+- 架构：单 Reactor + epoll ET 事件驱动。
+- 协议能力：支持 HTTP/1.1、GET/HEAD/POST、keep-alive。
+- I/O 与缓冲：Buffer 使用 readv 分散读，降低高吞吐场景下读路径系统调用成本。
+- 资源服务：支持静态文件返回、基础 MIME 类型识别。
+- 稳定性：具备基础错误页处理与目录穿越拦截（拒绝 ../）。
+- 构建方式：CMake + C++17。
+
+#### v1.1（性能与稳定性增强）
+
+- 相对 v1.0 的架构改进：
+  - 从单 Reactor 升级为主从 Reactor，主线程专注 accept，连接轮询分发到多个 I/O EventLoop，缓解单线程瓶颈。
+- 相对 v1.0 的热点路径优化：
+  - ET 读写回调改为循环到 EAGAIN/EWOULDBLOCK，避免边缘触发模式下漏读漏写导致吞吐下降。
+  - 新增静态完整响应缓存（GET/HEAD + keep-alive/close），避免热点请求重复读盘与重复序列化。
+- 相对 v1.0 的稳定性增强：
+  - 修复连接生命周期中的重复计数递减等问题，提升长时间压测稳定性。
+  - 接入层增强：提升 listen backlog，accepted socket 启用 TCP_NODELAY/SO_KEEPALIVE，降低排队与尾延迟抖动。
+- 相对 v1.0 的工程改进：
+  - 增加构建资源约束：CMake 受控并行构建池 + 文档统一 `--parallel 2`，降低构建阶段资源打满导致崩溃风险。
+- 版本结果：
+  - 在 `wrk -t2 -c10000 -d60s http://localhost:8080/` 下，QPS 稳定 100000+，平均延迟 < 100ms。
 
 ## 2. 架构设计
 
@@ -125,16 +146,7 @@ wrk -t2 -c10000 -d60s http://localhost:8080/
 
 结论：在 `wrk -t2 -c10000 -d60s` 条件下，QPS 稳定达到 100000+，平均延迟低于 100ms。
 
-## 7. v1.1 相对 v1.0 的改进
-
-- 从单 Reactor 升级为主从 Reactor：主线程专注 accept，I/O 连接轮询分发到多个 EventLoop，降低单线程瓶颈。
-- ET 路径优化：读写事件均循环处理直到 EAGAIN/EWOULDBLOCK，避免 ET 模式下吞吐损失。
-- 静态响应缓存：首次加载后缓存完整 HTTP 响应（GET/HEAD + keep-alive/close），热点请求不再重复读盘和重复序列化。
-- 连接生命周期修复：修复连接计数重复递减等关闭路径问题，提升长压测稳定性。
-- 高并发接入增强：监听 backlog 提升，连接启用 TCP_NODELAY/SO_KEEPALIVE，降低排队与尾延迟抖动。
-- 构建资源约束：CMake 增加受控并行构建池，文档统一要求 `--parallel 2`，降低构建崩溃风险。
-
-## 8. 工程特性总结
+## 7. 工程特性总结
 
 - 基于 Reactor + epoll ET 的事件驱动架构，具备高并发连接处理能力。
 - 使用 eventfd 完成跨线程任务投递唤醒，降低线程切换等待成本。
@@ -143,7 +155,7 @@ wrk -t2 -c10000 -d60s http://localhost:8080/
 - 多 EventLoop 并发处理连接，适配 10k 级并发压测。
 - 静态响应缓存降低 CPU 与磁盘重复开销。
 
-## 9. 开源说明
+## 8. 开源说明
 
 - License: MIT
 - 适合用于 Linux 网络编程学习、Reactor 模型实践、HTTP 服务器课程设计与性能优化实验。
