@@ -48,7 +48,8 @@ int TimerManager::tick() {
     // 返回下一个到期的剩余毫秒数（作为 epoll_wait 的超时时间）
     auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(
                     heap_.front().expire - now).count();
-    return static_cast<int>(std::max(0LL, diff));
+    if (diff < 0) diff = 0;
+    return static_cast<int>(diff);
 }
 
 // 上浮（小的上浮，因为是最小堆）

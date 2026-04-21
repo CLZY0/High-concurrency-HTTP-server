@@ -1,0 +1,26 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/s/TinyHTTPServer/src/Timer.cpp
+Timer.h
+/home/s/TinyHTTPServer/src/Timer.h
+algorithm
+-
+cassert
+-
+
+/home/s/TinyHTTPServer/src/Timer.h
+functional
+-
+chrono
+-
+vector
+-
+unordered_map
+-
+

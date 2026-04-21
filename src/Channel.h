@@ -2,6 +2,7 @@
 #pragma once
 #include <functional>
 #include <memory>
+#include <sys/epoll.h>
 
 class EventLoop;   // 前向声明，避免循环依赖
 

@@ -8,7 +8,7 @@
 #include <sys/syscall.h>  // syscall(SYS_gettid)
 
 // 获取当前线程 ID（比 pthread_self() 更准确）
-static pid_t gettid() {
+static pid_t currentTid() {
     return static_cast<pid_t>(syscall(SYS_gettid));
 }
 
@@ -16,7 +16,7 @@ EventLoop::EventLoop()
     : looping_(false)
     , quit_(false)
     , callingPendingFunctors_(false)
-    , threadId_(gettid())
+    , threadId_(currentTid())
     , epoller_(new Epoller())
     , wakeupFd_(eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC))
     , wakeupChannel_(new Channel(this, wakeupFd_))
@@ -124,4 +124,4 @@ void EventLoop::doPendingFunctors() {
 void EventLoop::updateChannel(Channel* channel) { epoller_->updateChannel(channel); }
 void EventLoop::removeChannel(Channel* channel) { epoller_->removeChannel(channel); }
 bool EventLoop::hasChannel(Channel* channel)    { return epoller_->hasChannel(channel); }
-bool EventLoop::isInLoopThread() const          { return threadId_ == gettid(); }
+bool EventLoop::isInLoopThread() const          { return threadId_ == currentTid(); }
