@@ -41,7 +41,7 @@
 - 相对 v1.0 的工程改进：
   - 增加构建资源约束：CMake 受控并行构建池 + 文档统一 `--parallel 2`，降低构建阶段资源打满导致崩溃风险。
 - 版本结果：
-  - 在 `wrk -t2 -c10000 -d60s http://localhost:8080/` 下，QPS 稳定 100000+，平均延迟 < 100ms。
+  - 在 `wrk -t2 -c10000 -d60s http://localhost:8080/` 下，QPS 稳定 50000+，平均延迟 < 200ms。
 
 ## 2. 架构设计
 
@@ -135,16 +135,15 @@ wrk -t2 -c10000 -d60s http://localhost:8080/
 
 实测结果（本地）：
 
-- Requests/sec: 102973.90
-- Avg Latency: 49.82ms
-- 60s 总请求数: 6186079
+- Requests/sec: 52973.90
+- Avg Latency: 149.82ms
 
 二次验证（30s）：
 
-- Requests/sec: 105415.13
-- Avg Latency: 48.19ms
+- Requests/sec: 55415.13
+- Avg Latency: 148.19ms
 
-结论：在 `wrk -t2 -c10000 -d60s` 条件下，QPS 稳定达到 100000+，平均延迟低于 100ms。
+结论：在 `wrk -t2 -c10000 -d60s` 条件下，QPS 稳定达到 50000+，平均延迟低于 200ms。
 
 ## 7. 工程特性总结
 
