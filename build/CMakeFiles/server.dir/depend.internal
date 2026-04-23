@@ -46,6 +46,8 @@ CMakeFiles/server.dir/src/Server.cpp.o
  /home/s/TinyHTTPServer/src/HttpResponse.h
  /home/s/TinyHTTPServer/src/Server.cpp
  /home/s/TinyHTTPServer/src/Server.h
+ /home/s/TinyHTTPServer/src/ThreadPool.h
+ /home/s/TinyHTTPServer/src/Timer.h
 CMakeFiles/server.dir/src/Timer.cpp.o
  /home/s/TinyHTTPServer/src/Timer.cpp
  /home/s/TinyHTTPServer/src/Timer.h
@@ -53,4 +55,6 @@ CMakeFiles/server.dir/src/main.cpp.o
  /home/s/TinyHTTPServer/src/Acceptor.h
  /home/s/TinyHTTPServer/src/EventLoop.h
  /home/s/TinyHTTPServer/src/Server.h
+ /home/s/TinyHTTPServer/src/ThreadPool.h
+ /home/s/TinyHTTPServer/src/Timer.h
  /home/s/TinyHTTPServer/src/main.cpp

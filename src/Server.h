@@ -2,48 +2,38 @@
 #pragma once
 #include "EventLoop.h"
 #include "Acceptor.h"
+#include "ThreadPool.h"
+#include "Timer.h"
 #include <unordered_map>
 #include <memory>
 #include <string>
-#include <vector>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 
 class HttpConn;
 
-class Server
-{
+class Server {
 public:
-    Server(int port, int threadNum, const std::string &resourceDir);
+    Server(int port, int threadNum, const std::string& resourceDir);
     ~Server();
 
     void start();
 
 private:
-    struct WorkerContext
-    {
-        EventLoop *loop{nullptr};
-        std::unordered_map<int, std::shared_ptr<HttpConn>> connections;
-    };
+    void onNewConnection(int connFd);    // 新连接到来
+    void onConnectionClose(int connFd);  // 连接关闭
+    void onTimerExpire(int connFd);      // 连接超时
 
-    void startWorkerLoops();
-    WorkerContext *pickWorker();
-    void onNewConnection(int connFd);                          // 新连接到来
-    void onConnectionClose(WorkerContext *worker, int connFd); // 连接关闭
+    static const int kConnectionTimeout = 60000;  // 60秒超时
 
-    int port_;
-    int ioThreadNum_;
+    int         port_;
     std::string resourceDir_;
 
-    EventLoop loop_;    // 主 EventLoop（Main Reactor）
-    Acceptor acceptor_; // 监听新连接
+    EventLoop             loop_;        // 主 EventLoop（Main Reactor）
+    Acceptor              acceptor_;    // 监听新连接
+    ThreadPool            threadPool_;  // 工作线程池
+    TimerManager          timer_;       // 定时器
 
-    std::vector<std::unique_ptr<WorkerContext>> workers_;
-    std::vector<std::thread> ioThreads_;
-    size_t nextWorker_;
-
-    std::mutex workerInitMutex_;
-    std::condition_variable workerInitCv_;
-    int initializedWorkers_;
+    // fd → HttpConn 映射
+    std::unordered_map<int, std::shared_ptr<HttpConn>> connections_;
+    // fd → TimerID 映射（用于超时管理）
+    std::unordered_map<int, TimerID> timers_;
 };
