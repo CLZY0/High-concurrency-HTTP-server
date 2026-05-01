@@ -9,8 +9,11 @@
 #include <sstream>
 #include <filesystem>
 #include <cerrno>
+#include <utility>
 
 std::atomic<int> HttpConn::userCount{0};
+std::unordered_map<std::string, std::shared_ptr<HttpConn::CachedResponse>> HttpConn::fileCache_;
+std::mutex HttpConn::fileCacheMutex_;
 
 HttpConn::HttpConn(EventLoop *loop, int fd, const std::string &resourceDir)
     : loop_(loop), fd_(fd), isClose_(false), channel_(new Channel(loop, fd)), resourceDir_(resourceDir)
@@ -50,7 +53,6 @@ void HttpConn::shutdown()
     if (!isClose_)
     {
         isClose_ = true;
-        --userCount;
         channel_->disableAll();
         channel_->remove();
         ::close(fd_);
@@ -62,19 +64,23 @@ void HttpConn::shutdown()
 // 可读事件：从 fd 读数据
 void HttpConn::handleRead()
 {
-    int savedErrno = 0;
-    ssize_t n = readBuf_.readFd(fd_, &savedErrno);
-
-    if (n <= 0)
+    for (;;)
     {
-        // n == 0: 对端关闭连接（recv 返回0）
-        // n < 0 && errno != EAGAIN: 真正的错误
-        if (n == 0 || (n < 0 && savedErrno != EAGAIN))
+        int savedErrno = 0;
+        ssize_t n = readBuf_.readFd(fd_, &savedErrno);
+
+        if (n > 0)
+            continue;
+        if (n == 0)
         {
             handleClose();
             return;
         }
-        // n < 0 && errno == EAGAIN: 暂时无数据，下次再读
+        if (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK)
+        {
+            break;
+        }
+        handleClose();
         return;
     }
 
@@ -91,30 +97,32 @@ void HttpConn::handleWrite()
 {
     if (writeBuf_.readableBytes() == 0)
     {
-        // 没有数据要写，取消写事件监听
         channel_->disableWriting();
         return;
     }
 
-    int savedErrno = 0;
-    ssize_t n = writeBuf_.writeFd(fd_, &savedErrno);
-
-    if (n < 0 && savedErrno != EAGAIN)
+    while (writeBuf_.readableBytes() > 0)
     {
+        int savedErrno = 0;
+        ssize_t n = writeBuf_.writeFd(fd_, &savedErrno);
+        if (n > 0)
+            continue;
+        if (n < 0 && (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK))
+        {
+            break;
+        }
         handleClose();
         return;
     }
 
     if (writeBuf_.readableBytes() == 0)
     {
-        // 全部发完
         channel_->disableWriting();
-        // 如果是短连接，发完就关闭
         if (!request_.isKeepAlive())
         {
             handleClose();
+            return;
         }
-        // 重置请求，准备接收下一个（长连接复用）
         request_.reset();
     }
 }
@@ -128,7 +136,6 @@ bool HttpConn::process()
     if (readBuf_.readableBytes() == 0)
         return false;
 
-    // 将 Buffer 中的数据交给 HttpRequest 解析
     std::string rawData = readBuf_.retrieveAllAsString();
     bool complete = request_.parse(rawData);
 
@@ -145,67 +152,100 @@ bool HttpConn::process()
         return false; // 数据不完整，等待更多数据
 
     // 构造响应
-    HttpResponse resp(request_.isKeepAlive());
+    bool keepAlive = request_.isKeepAlive();
 
     if (request_.method() == "GET" || request_.method() == "HEAD")
     {
-        serveStaticFile(request_.path(), resp);
+        if (!serveStaticFile(request_.path(), keepAlive, request_.method() == "HEAD"))
+        {
+            auto resp = HttpResponse::makeErrorResponse(
+                HttpResponse::StatusCode::k404_NotFound, "Not Found", keepAlive);
+            sendResponse(resp);
+        }
     }
     else if (request_.method() == "POST")
     {
-        // 简单处理：返回 200
+        HttpResponse resp(keepAlive);
         resp.setStatusCode(HttpResponse::StatusCode::k200_OK);
         resp.setContentType("application/json");
         resp.setBody("{\"status\":\"ok\"}");
+        sendResponse(resp);
     }
     else
     {
-        resp = HttpResponse::makeErrorResponse(
+        auto resp = HttpResponse::makeErrorResponse(
             HttpResponse::StatusCode::k400_BadRequest,
-            "Method Not Allowed", request_.isKeepAlive());
+            "Method Not Allowed", keepAlive);
+        sendResponse(resp);
     }
-
-    sendResponse(resp);
     return true;
 }
 
-// 读取并服务静态文件
-bool HttpConn::serveStaticFile(const std::string &urlPath, HttpResponse &resp)
+bool HttpConn::buildCachedResponse(const std::string &filePath,
+                                   std::shared_ptr<CachedResponse> &out)
 {
-    // 安全检查：防止路径穿越（../ 攻击）
+    std::ifstream file(filePath, std::ios::binary);
+    if (!file.is_open())
+        return false;
+
+    std::ostringstream oss;
+    oss << file.rdbuf();
+    const std::string body = oss.str();
+
+    const std::string contentType = HttpResponse::getMimeType(filePath);
+    const std::string baseHeaders =
+        "Content-Type: " + contentType + "\r\n"
+                                         "Content-Length: " +
+        std::to_string(body.size()) + "\r\n";
+
+    out.reset(new CachedResponse());
+    out->getKeepAlive = "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\n" + baseHeaders + "\r\n" + body;
+    out->getClose = "HTTP/1.1 200 OK\r\nConnection: close\r\n" + baseHeaders + "\r\n" + body;
+    out->headKeepAlive = "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\n" + baseHeaders + "\r\n";
+    out->headClose = "HTTP/1.1 200 OK\r\nConnection: close\r\n" + baseHeaders + "\r\n";
+    return true;
+}
+
+// 读取并服务静态文件（命中缓存时零磁盘 IO）
+bool HttpConn::serveStaticFile(const std::string &urlPath, bool keepAlive, bool headOnly)
+{
     if (urlPath.find("..") != std::string::npos)
     {
-        resp = HttpResponse::makeErrorResponse(
-            HttpResponse::StatusCode::k403_Forbidden, "Forbidden");
+        auto resp = HttpResponse::makeErrorResponse(
+            HttpResponse::StatusCode::k403_Forbidden, "Forbidden", keepAlive);
+        sendResponse(resp);
         return false;
     }
 
     std::string filePath = resourceDir_ + urlPath;
 
-    // 检查文件是否存在
-    std::ifstream file(filePath, std::ios::binary);
-    if (!file.is_open())
+    std::shared_ptr<CachedResponse> cached;
     {
-        // 尝试 index.html
-        if (urlPath == "/index.html")
+        std::lock_guard<std::mutex> lock(fileCacheMutex_);
+        auto it = fileCache_.find(filePath);
+        if (it == fileCache_.end())
         {
-            resp = HttpResponse::makeErrorResponse(
-                HttpResponse::StatusCode::k404_NotFound, "Not Found");
-            return false;
+            if (!buildCachedResponse(filePath, cached))
+                return false;
+            fileCache_[filePath] = cached;
         }
-        resp = HttpResponse::makeErrorResponse(
-            HttpResponse::StatusCode::k404_NotFound, "Not Found");
-        return false;
+        else
+        {
+            cached = it->second;
+        }
     }
 
-    // 读取文件内容
-    std::ostringstream oss;
-    oss << file.rdbuf();
-    std::string content = oss.str();
+    if (!cached)
+        return false;
 
-    resp.setStatusCode(HttpResponse::StatusCode::k200_OK);
-    resp.setContentType(HttpResponse::getMimeType(filePath));
-    resp.setBody(content);
+    if (headOnly)
+    {
+        sendRawResponse(keepAlive ? cached->headKeepAlive : cached->headClose);
+    }
+    else
+    {
+        sendRawResponse(keepAlive ? cached->getKeepAlive : cached->getClose);
+    }
     return true;
 }
 
@@ -213,17 +253,38 @@ bool HttpConn::serveStaticFile(const std::string &urlPath, HttpResponse &resp)
 void HttpConn::sendResponse(HttpResponse &resp)
 {
     resp.appendToBuffer(&writeBuf_);
+    flushWriteBuffer();
+}
 
-    if (writeBuf_.readableBytes() > 0)
+void HttpConn::sendRawResponse(const std::string &rawResp)
+{
+    writeBuf_.append(rawResp);
+    flushWriteBuffer();
+}
+
+void HttpConn::flushWriteBuffer()
+{
+    while (writeBuf_.readableBytes() > 0)
     {
-        // 先尝试直接 write（减少延迟）
         int savedErrno = 0;
-        writeBuf_.writeFd(fd_, &savedErrno);
-
-        // 如果还没写完，注册写事件，等 epoll 通知再写
-        if (writeBuf_.readableBytes() > 0)
+        ssize_t n = writeBuf_.writeFd(fd_, &savedErrno);
+        if (n > 0)
+            continue;
+        if (n < 0 && (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK))
         {
             channel_->enableWriting();
+            return;
         }
+        handleClose();
+        return;
     }
+
+    channel_->disableWriting();
+
+    if (!request_.isKeepAlive())
+    {
+        handleClose();
+        return;
+    }
+    request_.reset();
 }

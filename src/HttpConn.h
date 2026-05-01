@@ -7,6 +7,8 @@
 #include <memory>
 #include <string>
 #include <atomic>
+#include <unordered_map>
+#include <mutex>
 
 class EventLoop;
 class Channel;
@@ -33,6 +35,14 @@ public:
     static std::atomic<int> userCount; // 当前连接数（全局统计）
 
 private:
+    struct CachedResponse
+    {
+        std::string getKeepAlive;
+        std::string getClose;
+        std::string headKeepAlive;
+        std::string headClose;
+    };
+
     // Channel 回调
     void handleRead();  // 有数据可读
     void handleWrite(); // 可以写数据
@@ -42,9 +52,13 @@ private:
     // 业务逻辑
     bool process(); // 解析请求、构造响应
     void sendResponse(HttpResponse &resp);
+    void sendRawResponse(const std::string &rawResp);
+    void flushWriteBuffer();
 
     // 读取静态文件
-    bool serveStaticFile(const std::string &path, HttpResponse &resp);
+    bool serveStaticFile(const std::string &path, bool keepAlive, bool headOnly);
+    static bool buildCachedResponse(const std::string &filePath,
+                                    std::shared_ptr<CachedResponse> &out);
 
     EventLoop *loop_;
     int fd_;
@@ -59,4 +73,7 @@ private:
     std::string resourceDir_; // 静态文件根目录
 
     CloseCallback closeCallback_;
+
+    static std::unordered_map<std::string, std::shared_ptr<CachedResponse>> fileCache_;
+    static std::mutex fileCacheMutex_;
 };

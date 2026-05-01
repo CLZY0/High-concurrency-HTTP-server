@@ -45,8 +45,6 @@ CMakeFiles/server.dir/src/Server.cpp.o: ../src/HttpRequest.h
 CMakeFiles/server.dir/src/Server.cpp.o: ../src/HttpResponse.h
 CMakeFiles/server.dir/src/Server.cpp.o: ../src/Server.cpp
 CMakeFiles/server.dir/src/Server.cpp.o: ../src/Server.h
-CMakeFiles/server.dir/src/Server.cpp.o: ../src/ThreadPool.h
-CMakeFiles/server.dir/src/Server.cpp.o: ../src/Timer.h
 
 CMakeFiles/server.dir/src/Timer.cpp.o: ../src/Timer.cpp
 CMakeFiles/server.dir/src/Timer.cpp.o: ../src/Timer.h
@@ -54,7 +52,5 @@ CMakeFiles/server.dir/src/Timer.cpp.o: ../src/Timer.h
 CMakeFiles/server.dir/src/main.cpp.o: ../src/Acceptor.h
 CMakeFiles/server.dir/src/main.cpp.o: ../src/EventLoop.h
 CMakeFiles/server.dir/src/main.cpp.o: ../src/Server.h
-CMakeFiles/server.dir/src/main.cpp.o: ../src/ThreadPool.h
-CMakeFiles/server.dir/src/main.cpp.o: ../src/Timer.h
 CMakeFiles/server.dir/src/main.cpp.o: ../src/main.cpp
 

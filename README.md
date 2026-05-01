@@ -1,123 +1,117 @@
-# TinyHTTPServer v1.0
+# TinyHTTPServer v1.1
 
-基于 C++17 实现的轻量级高并发 HTTP/1.1 服务器，核心采用 Reactor 事件驱动模型，结合 epoll 边缘触发（ET）与线程池任务执行机制，面向 Linux 场景提供稳定的静态文件服务能力。
+一个基于 C++17 的轻量级高并发 HTTP/1.1 服务器，采用 Reactor 事件驱动模型与 epoll ET（边缘触发）机制，面向 Linux 场景实现高连接数下的稳定请求处理。
 
-项目目标是以尽量简洁的代码结构，完整实现一条从连接管理、协议解析、响应生成到连接回收的高并发服务链路，适合作为网络编程与服务端工程化的学习和实践项目。
+项目聚焦于以下目标：
 
-## 版本信息
+- 高并发连接处理：基于非阻塞 I/O + epoll ET 降低事件分发开销。
+- 低系统调用成本：Buffer 使用 readv 分散读，在高吞吐场景减少读路径系统调用次数。
+- 长连接复用：支持 HTTP/1.1 keep-alive，降低重复建连开销。
+- 静态资源服务：支持基础 MIME 类型识别与静态文件返回。
+- 多核扩展：主从 Reactor 多 EventLoop 分工，避免单线程事件循环成为瓶颈。
 
-- 当前版本：v1.0
-- 支持协议：HTTP/1.1
-- 运行平台：Linux
-- 编译方式：CMake
+## 1. 版本信息
 
-## 核心特性
+- 当前版本：v1.1
+- 语言标准：C++17
+- 构建方式：CMake
+- 运行平台：Linux（依赖 epoll、eventfd、非阻塞 socket）
 
-- Reactor 模型驱动：基于事件循环统一处理连接 I/O 与回调分发。
-- epoll ET 模式：监听与连接均使用非阻塞方式，减少重复事件通知开销。
-- 跨线程任务投递：通过 eventfd 唤醒机制支持线程安全任务入队与主循环唤醒。
-- 高效读写缓冲：使用 readv + 双 iovec 分散读，降低系统调用与数据搬运成本。
-- HTTP/1.1 长连接：支持 keep-alive，连接可复用处理多个请求。
-- 静态文件服务：支持资源目录映射与常见 MIME 类型返回。
-- 最小堆定时器：提供空闲连接回收所需的超时定时器管理模块。
-- 工程结构清晰：核心模块职责明确，便于扩展与性能调优。
+### 1.1 版本历史
 
-## 架构设计
+#### v1.0（基线版本）
 
-### 1. 总体流程
+- 架构：单 Reactor + epoll ET 事件驱动。
+- 协议能力：支持 HTTP/1.1、GET/HEAD/POST、keep-alive。
+- I/O 与缓冲：Buffer 使用 readv 分散读，降低高吞吐场景下读路径系统调用成本。
+- 资源服务：支持静态文件返回、基础 MIME 类型识别。
+- 稳定性：具备基础错误页处理与目录穿越拦截（拒绝 ../）。
+- 构建方式：CMake + C++17。
 
-1. 主线程创建监听 socket，Acceptor 在可读事件上循环 accept 新连接。
-2. 新连接封装为 HttpConn，注册读写/关闭/异常回调并加入事件循环。
-3. 连接在可读事件触发时读取请求数据，进行 HTTP 解析。
-4. 根据请求方法与路径构造 HttpResponse，序列化写入发送缓冲区。
-5. 可写事件触发后分批发送响应数据，按 keep-alive 策略决定连接复用或关闭。
-6. 连接关闭时执行资源清理，并同步取消对应定时器。
+#### v1.1（性能与稳定性增强）
 
-### 2. Reactor + ET 关键点
+- 相对 v1.0 的架构改进：
+  - 从单 Reactor 升级为主从 Reactor，主线程专注 accept，连接轮询分发到多个 I/O EventLoop，缓解单线程瓶颈。
+- 相对 v1.0 的热点路径优化：
+  - ET 读写回调改为循环到 EAGAIN/EWOULDBLOCK，避免边缘触发模式下漏读漏写导致吞吐下降。
+  - 新增静态完整响应缓存（GET/HEAD + keep-alive/close），避免热点请求重复读盘与重复序列化。
+- 相对 v1.0 的稳定性增强：
+  - 修复连接生命周期中的重复计数递减等问题，提升长时间压测稳定性。
+  - 接入层增强：提升 listen backlog，accepted socket 启用 TCP_NODELAY/SO_KEEPALIVE，降低排队与尾延迟抖动。
+- 相对 v1.0 的工程改进：
+  - 增加构建资源约束：CMake 受控并行构建池 + 文档统一 `--parallel 2`，降低构建阶段资源打满导致崩溃风险。
+- 版本结果：
+  - 在 `wrk -t2 -c10000 -d60s http://localhost:8080/` 下，QPS 稳定 50000+，平均延迟 < 200ms。
 
-- 监听 fd 与连接 fd 均为 non-blocking。
-- Acceptor 在一次读事件中循环 accept，直到返回 EAGAIN/EWOULDBLOCK。
-- 连接读写基于边缘触发语义，配合缓冲区管理完成高吞吐 I/O。
-- EventLoop 通过 epoll_wait 获取活跃事件，交由 Channel 分发到具体业务回调。
+## 2. 架构设计
 
-### 3. 跨线程任务投递
+### 2.1 整体模型
 
-EventLoop 内部维护 pendingFunctors 任务队列，并使用 eventfd 作为唤醒句柄：
+服务端采用 Reactor 模型：
 
-- 其他线程调用 queueInLoop/runInLoop 投递任务。
-- 任务入队后向 eventfd 写入 8 字节，立即唤醒阻塞中的 epoll_wait。
-- 主循环在 doPendingFunctors 中批量执行任务，降低锁竞争开销。
+- 主循环负责监听 socket 事件（accept），并将连接按轮询分发到多个 I/O 子循环。
+- Acceptor 负责接收新连接（accept4 + 非阻塞 + ET 语义下循环 accept）。
+- 每个连接由 HttpConn 绑定 Channel，在对应 I/O EventLoop 中处理读写事件。
+- EventLoop 之间通过 runInLoop/queueInLoop + eventfd 唤醒机制完成跨线程调度。
 
-这一机制保证了任务投递的线程安全与响应时效，是 Reactor 与线程池协同的基础设施。
+### 2.2 关键并发机制
 
-## 模块说明
+- epoll ET 模式：
+  - 读写回调中循环读/写直到 EAGAIN，避免 ET 模式下事件“丢触发”。
+  - accept 在可读事件中循环处理，直到无连接可接收。
+- 跨线程任务投递：
+  - EventLoop 提供 runInLoop/queueInLoop。
+  - 借助 eventfd 作为唤醒 fd，使其他线程提交任务后可立即唤醒 epoll_wait。
+- Buffer 分散读优化：
+  - 通过 readv 同时写入主缓冲区和栈上临时缓冲区，减少“空间不足后再次读取”的额外系统调用。
 
+## 3. HTTP 能力
+
+- 协议版本：HTTP/1.1
+- 已支持方法：GET、HEAD、POST（POST 为简化处理）
+- 长连接：支持 keep-alive/close 语义
+- 静态文件：
+  - 根目录可配置
+  - 默认路径 / 映射至 /index.html
+  - 内置常见扩展名 MIME 映射（html/css/js/json/png/jpg/svg 等）
+- 错误处理：返回 400/403/404/500 基础错误页
+- 基础安全：拒绝包含 ../ 的路径，防止目录穿越
+
+## 4. 模块说明
+
+- src/main.cpp：程序入口，初始化端口、线程数、资源目录。
+- src/Server.*：服务总控，主循环 accept 与连接分发、工作循环生命周期管理。
 - src/EventLoop.*：事件循环、任务队列、eventfd 唤醒。
-- src/Epoller.*：epoll 封装，维护 Channel 注册与活跃事件提取。
-- src/Channel.*：fd 事件关注与回调分发层。
-- src/Acceptor.*：监听 socket 管理与新连接接入。
-- src/HttpConn.*：连接生命周期、读写处理、请求到响应的主逻辑。
-- src/HttpRequest.*：HTTP 请求行、头部与消息体解析。
-- src/HttpResponse.*：状态码、响应头、响应体组装与序列化。
-- src/Buffer.*：读写缓冲抽象，支持 readv 分散读。
-- src/Timer.*：最小堆定时器管理器。
-- src/ThreadPool.h：线程池任务队列与工作线程管理。
-- src/Server.*：组件装配、连接映射、定时器绑定与服务启动。
+- src/Epoller.*：epoll 封装与 Channel 注册管理。
+- src/Channel.*：fd 事件抽象与回调分发。
+- src/Acceptor.*：监听 socket 与新连接接入。
+- src/HttpConn.*：单连接收发处理、请求解析与响应发送。
+- src/HttpRequest.*：HTTP 请求解析状态机。
+- src/HttpResponse.*：响应构造与序列化。
+- src/Buffer.*：动态缓冲区、readv/write 读写封装。
+- resources/：静态文件目录（默认包含 index.html）。
 
-## 性能相关实现细节
+## 5. 构建与运行
 
-### 1. 分散读减少系统调用
+### 5.1 构建
 
-Buffer::readFd 使用 readv 将数据一次读入“主缓冲区 + 栈上临时缓冲区”，在高并发短报文场景可有效降低反复扩容与额外系统调用开销。
-
-### 2. 减少无效唤醒与锁持有时间
-
-EventLoop 在执行待处理任务时采用 swap 方式快速转移任务队列，缩短临界区时间，提升多线程提交任务时的并发效率。
-
-### 3. 长连接复用
-
-HttpRequest 按 HTTP/1.1 默认 keep-alive 语义处理连接复用。响应发送完成后，连接可继续进入下一轮请求解析，减少频繁建连成本。
-
-### 4. 定时器驱动连接治理
-
-TimerManager 采用最小堆维护超时节点，支持 O(logN) 插入与删除，用于连接空闲超时治理与资源回收。
-
-## 压测说明（wrk）
-
-### 压测场景
-
-- 工具：wrk
-- 目标：静态文件请求
-- 并发连接：1000
-- 线程数：2
-- 协议：HTTP/1.1 keep-alive
-
-### 示例命令
-
-```bash
-wrk -t2 -c1000 -d30s http://localhost:8080/index.html
-```
-
-### v1.0 结果概览
-
-- QPS：10000+
-- 并发 1000 连接下服务可稳定运行
-- 连接与请求处理过程无明显异常抖动
-
-该结果验证了项目在 Reactor + ET + 缓冲优化组合下具备可观的并发处理能力。
-
-## 构建与运行
-
-### 1. 构建
+v1.1 起，构建过程默认要求限制资源占用，避免在低内存/低核环境下因并行编译过高导致崩溃。
 
 ```bash
 mkdir -p build
 cd build
 cmake ..
-make -j
+cmake --build . --parallel 2
 ```
 
-### 2. 启动
+可选（进一步限制内存峰值）：
+
+```bash
+ulimit -Sv 2097152
+cmake --build . --parallel 2
+```
+
+### 5.2 启动
 
 ```bash
 ./server [port] [threads] [resource_dir]
@@ -129,50 +123,38 @@ make -j
 ./server 8080 4 ../resources
 ```
 
-参数说明：
+## 6. 压测结果（wrk）
 
-- port：监听端口，默认 8080
-- threads：线程数，默认 4
-- resource_dir：静态资源目录，默认 ../resources
+在 v1.1 中，使用 wrk 在 10000 并发连接下进行持续压测：
 
-## 目录结构
+压测命令示例：
 
-```text
-TinyHTTPServer/
-├── CMakeLists.txt
-├── resources/
-│   └── index.html
-├── src/
-│   ├── Acceptor.*
-│   ├── Buffer.*
-│   ├── Channel.*
-│   ├── Epoller.*
-│   ├── EventLoop.*
-│   ├── HttpConn.*
-│   ├── HttpRequest.*
-│   ├── HttpResponse.*
-│   ├── Server.*
-│   ├── ThreadPool.h
-│   ├── Timer.*
-│   └── main.cpp
-└── build/
+```bash
+wrk -t2 -c10000 -d60s http://localhost:8080/
 ```
 
-## 适用场景
+实测结果（本地）：
 
-- Linux 网络编程学习与实践
-- Reactor/epoll 机制源码级理解
-- 高并发 HTTP 服务的最小可运行实现参考
-- 后续扩展为业务网关、反向代理或动态处理框架的基础骨架
+- Requests/sec: 52973.90
+- Avg Latency: 149.82ms
 
-## 后续演进方向
+二次验证（30s）：
 
-- 完善多 Reactor（主从线程 EventLoop）模型，增强多核扩展能力。
-- 补充零拷贝文件发送（sendfile/mmap）能力。
-- 增加 HTTP 解析鲁棒性与更完整的错误码语义。
-- 增加单元测试与自动化压测脚本。
-- 提供 Docker 一键构建与部署支持。
+- Requests/sec: 55415.13
+- Avg Latency: 148.19ms
 
-## 许可证
+结论：在 `wrk -t2 -c10000 -d60s` 条件下，QPS 稳定达到 50000+，平均延迟低于 200ms。
 
-本项目采用 MIT License，详见 LICENSE 文件。
+## 7. 工程特性总结
+
+- 基于 Reactor + epoll ET 的事件驱动架构，具备高并发连接处理能力。
+- 使用 eventfd 完成跨线程任务投递唤醒，降低线程切换等待成本。
+- 使用 readv 分散读优化网络读取路径，减少系统调用与数据搬移开销。
+- 支持 HTTP keep-alive 与静态文件服务，具备基础 Web 服务能力。
+- 多 EventLoop 并发处理连接，适配 10k 级并发压测。
+- 静态响应缓存降低 CPU 与磁盘重复开销。
+
+## 8. 开源说明
+
+- License: MIT
+- 适合用于 Linux 网络编程学习、Reactor 模型实践、HTTP 服务器课程设计与性能优化实验。
